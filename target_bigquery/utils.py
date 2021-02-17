@@ -1,16 +1,17 @@
+"""Utilities"""
+# -*- coding: utf-8 -*-
 import logging
 import json
 import sys
 
 import singer
 
-logger = singer.get_logger()
+logger: logging.RootLogger = singer.get_logger()
 
 
-def emit_state(state):
+def emit_state(state) -> None:
     if state is not None:
-        line = json.dumps(state)
-        logger.debug("Emitting state {}".format(line))
-        sys.stdout.write("{}\n".format(line))
+        line: str = json.dumps(state)
+        logger.debug(f'Emitting state {line}')
+        sys.stdout.write(f'{line}\n')
         sys.stdout.flush()
-
