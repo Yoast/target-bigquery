@@ -80,7 +80,11 @@ def main():
 
     if config.get("stream_data", True):
         state_iterator = persist_lines_stream(
-            client, dataset, input, validate_records=validate_records,
+            client,
+            dataset,
+            input,
+            validate_records=validate_records,
+            table_suffix=table_suffix,
         )
 
     else:
