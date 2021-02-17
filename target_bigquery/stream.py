@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 import logging
 import json
+from typing import Optional, Iterator, TextIO, Union
 from singer import SchemaMessage, StateMessage, RecordMessage
-from typing import Optional, TextIO, Union
 from google.cloud.bigquery.dataset import Dataset
 from google.cloud.bigquery.client import Client
 from google.cloud.bigquery.table import TableReference
@@ -27,7 +27,7 @@ def persist_lines_stream(
     lines: TextIO,
     validate_records: bool = True,
     table_suffix: Optional[str] = None,
-):
+) -> Iterator[Optional[str]]:
     # Create variable in which we save data in the upcomming loop
     state: Optional[str] = None
     schemas: dict = {}
