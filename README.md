@@ -21,11 +21,11 @@ A [Singer](https://singer.io) target that writes data to Google BigQuery. This f
 
 ### Step 2: Configure
 
-Create a file called `config.json` in your working directory, following [config.json.example](config.json.example). The required parameters are the project name `project_id`, the dataset name `dataset_id`, and table name `table_id`. 
+Create a file called `bigquery_config.json` in your working directory, following [config.json.example](config.json.example). The required parameters are the project name `project_id`, the dataset name `dataset_id`, and table name `table_id`. 
 
 ### Step 3: Install and Run
 
-First, make sure Python 3 is installed on your system or follow these installation instructions for [Mac](python-mac) or [Ubuntu](python-ubuntu).
+First, make sure Python 3 is installed on your system or follow these installation instructions for [Mac](python-mac) or [Ubuntu](python-ubuntu). This target has been tested with Python 3.7, 3.8 and 3.9 and might run on future versions without problems.
 
 `target-bigquery` can be run with any [Singer Tap], but we'll use [`tap-fixerio`][Fixerio] - which pulls currency exchange rate data from a public data set - as an example.
 
