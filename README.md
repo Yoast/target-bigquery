@@ -1,6 +1,6 @@
 # target-bigquery
 
-A [Singer](https://singer.io) target that writes data to Google BigQuery.
+A [Singer](https://singer.io) target that writes data to Google BigQuery. This fork has been fully rewritten by Yoast and contains fixes for streaming data.
 
 ## How to use it
 
@@ -21,7 +21,7 @@ A [Singer](https://singer.io) target that writes data to Google BigQuery.
 
 ### Step 2: Configure
 
-Create a file called `config.json` in your working directory, following [config.sample.json](config.sample.json). The required parameters are the project name `project_id`, the dataset name `dataset_id`, and table name `table_id`. 
+Create a file called `config.json` in your working directory, following [config.json.example](config.json.example). The required parameters are the project name `project_id`, the dataset name `dataset_id`, and table name `table_id`. 
 
 ### Step 3: Install and Run
 
@@ -55,15 +55,4 @@ It should be possible to use the oAuth flow to authenticate to GCP as well:
 
 The data will be written to the table specified in your `config.json`.
 
----
-
-Copyright &copy; 2018 RealSelf, Inc.
-
-[Singer Tap]: https://singer.io
-[Braintree]: https://github.com/singer-io/tap-braintree
-[Freshdesk]: https://github.com/singer-io/tap-freshdesk
-[Hubspot]: https://github.com/singer-io/tap-hubspot
-[Fixerio]: https://github.com/singer-io/tap-fixerio
-[python-mac]: http://docs.python-guide.org/en/latest/starting/install3/osx/
-[python-ubuntu]: https://www.digitalocean.com/community/tutorials/how-to-install-python-3-and-set-up-a-local-programming-environment-on-ubuntu-16-04
-
+Copyright &copy; 2021 Yoast

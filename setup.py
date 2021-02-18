@@ -1,25 +1,26 @@
-#!/usr/bin/env python
-
-from setuptools import setup
+"""Setup."""
+# -*- coding: utf-8 -*-
+from setuptools import setup, find_packages
 
 setup(
-    name="target-bigquery",
-    version="1.5.0",
-    description="Singer.io target for writing data to Google BigQuery",
-    author="RealSelf Business Intelligence",
-    url="https://github.com/dreamdata-io/target-bigquery",
-    classifiers=["Programming Language :: Python :: 3 :: Only"],
-    packages=["target_bigquery"],
+    name='target-bigquery',
+    version='1.6.0',
+    description='Singer.io target for writing data to Google BigQuery',
+    author='Yoast',
+    url='https://github.com/Yoast/target-bigquery',
+    classifiers=['Programming Language :: Python :: 3 :: Only'],
+    py_modules=['target_bigquery'],
     install_requires=[
-        "jsonschema==2.6.0",
-        "singer-python>=1.5.0",
-        "google-api-python-client>=1.6.2",
-        "google-cloud>=0.34.0",
-        "google-cloud-bigquery>=1.9.0",
-        "oauth2client",
+        'google-api-python-client~=1.12.8',
+        'google-cloud~=0.34.0',
+        'google-cloud-bigquery~=2.8.0',
+        'jsonschema~=2.6.0',
+        'oauth2client~=4.1.3',
+        'singer-python~=5.10.0',
     ],
-    entry_points="""
+    entry_points='''
         [console_scripts]
         target-bigquery=target_bigquery:main
-      """,
+      ''',
+    packages=find_packages(),
 )
