@@ -58,7 +58,7 @@ def main() -> None:
     location: str = config.get('location', 'EU')
     validate_records: bool = config.get('validate_records', True)
     project_id, dataset_id = config['project_id'], config['dataset_id']
-    stream_data: bool = config.get("stream_data", True)
+    stream_data: bool = config.get('stream_data', True)
 
     LOGGER.info(
         f'BigQuery target configured to move data to {project_id}.'
@@ -72,6 +72,11 @@ def main() -> None:
 
     # Input data from the tap
     input_target: TextIO = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8')
+
+    if stream_data and truncate:
+        raise NotImplementedError(
+            'Streaming data and truncating table is currently not implemented.'
+        )
 
     if stream_data:
         state_iterator: Iterator = persist_lines_stream(
