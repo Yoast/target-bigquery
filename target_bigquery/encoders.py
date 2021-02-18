@@ -1,11 +1,15 @@
+"""Decimal encoder."""
+# -*- coding: utf-8 -*-
+
 import json
 import decimal
+from typing import Any
 
 
 class DecimalEncoder(json.JSONEncoder):
-    # pylint: disable=method-hidden
-    def default(self, o):
-        if isinstance(o, decimal.Decimal):
-            return str(o)
-        return super(DecimalEncoder, self).default(o)
+    """Convert Decimal in JSON to string."""
 
+    def default(self, object: Any) -> Any:
+        if isinstance(object, decimal.Decimal):
+            return str(object)
+        return super(DecimalEncoder, self).default(object)

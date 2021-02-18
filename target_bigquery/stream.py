@@ -1,87 +1,140 @@
+"""Streaming data into BigQuery"""
+# -*- coding: utf-8 -*-
 import logging
 import json
-
+from typing import Optional, Iterator, TextIO, Union
+from singer import SchemaMessage, StateMessage, RecordMessage
+from google.cloud.bigquery.dataset import Dataset
+from google.cloud.bigquery.client import Client
+from google.cloud.bigquery.table import TableReference
 from google.cloud import bigquery
 from google.api_core import exceptions
 
 from jsonschema import validate
 import singer
 
-from target_bigquery.schema import build_schema
-from target_bigquery.utils import emit_state
-
-logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
-logger = singer.get_logger()
-
-from google.cloud.bigquery import Dataset, WriteDisposition
+from target_bigquery.schema import build_schema, filter
+from target_bigquery.encoders import DecimalEncoder
 
 
-def persist_lines_stream(client, dataset, lines=None, validate_records=True):
-    state = None
-    schemas = {}
-    key_properties = {}
-    tables = {}
-    rows = {}
-    errors = {}
+logger: logging.RootLogger = singer.get_logger()
 
+
+def persist_lines_stream(
+    client: Client,
+    dataset: Dataset,
+    lines: TextIO,
+    validate_records: bool = True,
+    table_suffix: Optional[str] = None,
+) -> Iterator[Optional[str]]:
+    # Create variable in which we save data in the upcomming loop
+    state: Optional[str] = None
+    schemas: dict = {}
+    key_properties: dict = {}
+    tables: dict = {}
+    rows: dict = {}
+    errors: dict = {}
+    table_suffix = table_suffix or ""
+
+    # For every Singer input message
     for line in lines:
+        # Parse the message
         try:
-            msg = singer.parse_message(line)
+            msg: Union[SchemaMessage, StateMessage, RecordMessage] = (
+                singer.parse_message(line)
+            )
         except json.decoder.JSONDecodeError:
-            logger.error("Unable to parse:\n{}".format(line))
+            logger.error(f'Unable to parse Singer Message:\n{line}')
             raise
 
-        if isinstance(msg, singer.RecordMessage):
-            if msg.stream not in schemas:
+        # There can be several kind of messages. When inserting data, the
+        # schema message comes first
+        if isinstance(msg, singer.SchemaMessage):
+            # Schema message, create the table
+            table: str = msg.stream
+
+            # Save the schema, key_properties and message to use in the
+            # record messages that are following
+            schemas[table] = msg.schema
+            key_properties[table] = msg.key_properties
+
+            tables[table] = bigquery.Table(
+                dataset.table(table),
+                schema=build_schema(schemas[table])
+            )
+
+            rows[table] = 0
+            errors[table] = None
+
+            # Create the table
+            try:
+                tables[table] = client.create_table(tables[table])
+            except exceptions.Conflict:
+                # Ignore errors about the table already exists
+                pass
+
+        elif isinstance(msg, singer.RecordMessage):
+            # Record message
+            table_name: str = msg.stream + table_suffix
+
+            if table_name not in schemas:
                 raise Exception(
-                    "A record for stream {} was encountered before a corresponding schema".format(
-                        msg.stream
+                    f'A record for stream {table_name} was encountered before '
+                    'a corresponding schema'
                     )
-                )
 
-            schema = schemas[msg.stream]
+            # Retrieve schema
+            schema: dict = schemas[table_name]
 
+            # Retrieve table
+            table_ref: TableReference = tables[table_name]
+
+            # Validate the record
             if validate_records:
+                # Raises ValidationError if the record has invalid schema
                 validate(msg.record, schema)
 
-            err = None
+            # Filter the record
+            record_input: dict = filter(schema, msg.record)
+
+            # Somewhere in the process, the input record can have decimal
+            # values e.g. "value": Decimal('10.25'). These are not JSON
+            # erializable. Therefore, we dump the JSON here, which converts
+            # them to string. Thereafter, we load the dumped JSON so we get a
+            # dictionary again, which we can insert to BigQuery
+            record_json: str = json.dumps(record_input, cls=DecimalEncoder)
+            record: dict = json.loads(record_json)
+
+            # Save the error
+            err: Optional[list] = None
+
             try:
-                err = client.insert_rows_json(tables[msg.stream], [msg.record])
+                # Insert record
+                err = client.insert_rows(table_ref, [record])
             except Exception as exc:
                 logger.error(
-                    f"failed to insert rows for {tables[msg.stream]}: {str(exc)}\n{msg.record}"
+                    f'Failed to insert rows for {table_name}: {str(exc)}\n'
+                    f'{record}\n{err}'
                 )
                 raise
 
+            # Save errors of the stream and increate the insert rows
             errors[msg.stream] = err
             rows[msg.stream] += 1
 
             state = None
 
         elif isinstance(msg, singer.StateMessage):
-            logger.debug("Setting state to {}".format(msg.value))
+            # State messages
+            logger.debug(f'Setting state to {msg.value}')
             state = msg.value
-
-        elif isinstance(msg, singer.SchemaMessage):
-            table = msg.stream
-            schemas[table] = msg.schema
-            key_properties[table] = msg.key_properties
-            tables[table] = bigquery.Table(
-                dataset.table(table), schema=build_schema(schemas[table])
-            )
-            rows[table] = 0
-            errors[table] = None
-            try:
-                tables[table] = client.create_table(tables[table])
-            except exceptions.Conflict:
-                pass
 
         elif isinstance(msg, singer.ActivateVersionMessage):
             # This is experimental and won't be used yet
             pass
 
         else:
-            raise Exception("Unrecognized message {}".format(msg))
+            raise Exception(f'Unrecognized Singer Message:\n {msg}')
 
     for table in errors.keys():
         if not errors[table]:

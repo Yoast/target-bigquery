@@ -1,34 +1,23 @@
+"""Utilities"""
+# -*- coding: utf-8 -*-
 import logging
 import json
 import sys
+from typing import Optional
 
 import singer
 
-logger = singer.get_logger()
+logger: logging.RootLogger = singer.get_logger()
 
 
-def emit_state(state):
+def emit_state(state: Optional[dict]) -> None:
+    """Write state to stdout
+
+    Arguments:
+        state {Optional[dict]} -- State
+    """    
     if state is not None:
-        line = json.dumps(state)
-        logger.debug("Emitting state {}".format(line))
-        sys.stdout.write("{}\n".format(line))
+        line: str = json.dumps(state)
+        logger.debug(f'Emitting state {line}')
+        sys.stdout.write(f'{line}\n')
         sys.stdout.flush()
-
-
-def collect():
-    try:
-        version = pkg_resources.get_distribution("target-bigquery").version
-        conn = http.client.HTTPConnection("collector.singer.io", timeout=10)
-        conn.connect()
-        params = {
-            "e": "se",
-            "aid": "singer",
-            "se_ca": "target-bigquery",
-            "se_ac": "open",
-            "se_la": version,
-        }
-        conn.request("GET", "/i?" + urllib.parse.urlencode(params))
-        conn.getresponse()
-        conn.close()
-    except:
-        logger.debug("Collection request failed")

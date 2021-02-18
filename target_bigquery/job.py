@@ -1,11 +1,16 @@
+"""Load jobs into BigQuery"""
+# -*- coding: utf-8 -*-
 import logging
 import json
+from typing import Iterator, Optional, TextIO, Union
 from tempfile import TemporaryFile
+from singer import SchemaMessage, StateMessage, RecordMessage
 
-from google.cloud import bigquery
 from google.cloud.bigquery.job import SourceFormat
 from google.cloud.bigquery import WriteDisposition
-from google.cloud.bigquery import LoadJobConfig
+from google.cloud.bigquery import LoadJob, LoadJobConfig
+from google.cloud.bigquery.dataset import Dataset
+from google.cloud.bigquery.client import Client
 from google.api_core import exceptions as google_exceptions
 
 import singer
@@ -14,108 +19,142 @@ from jsonschema import validate
 from target_bigquery.encoders import DecimalEncoder
 from target_bigquery.schema import build_schema, filter
 
-logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
-logger = singer.get_logger()
+logger: logging.RootLogger = singer.get_logger()
 
 
 def persist_lines_job(
-    client,
-    dataset,
-    lines=None,
-    truncate=False,
-    forced_fulltables=[],
-    validate_records=True,
-    table_suffix=None,
-):
-    state = None
-    schemas = {}
-    key_properties = {}
-    rows = {}
-    errors = {}
+    client: Client,
+    dataset: Dataset,
+    lines: TextIO,
+    truncate: bool = False,
+    forced_fulltables: list = [],
+    validate_records: bool = True,
+    table_suffix: Optional[str] = None,
+) -> Iterator[Optional[str]]:
+    # Create variable in which we save data in the upcomming loop
+    state: Optional[str] = None
+    schemas: dict = {}
+    key_properties: dict = {}
+    rows: dict = {}
+    errors: dict = {}
     table_suffix = table_suffix or ""
 
+    # For every Singer input message
     for line in lines:
+        # Parse the message
         try:
-            msg = singer.parse_message(line)
+            msg: Union[SchemaMessage, StateMessage, RecordMessage] = (
+                singer.parse_message(line)
+            )
         except json.decoder.JSONDecodeError:
-            logger.error("Unable to parse:\n{}".format(line))
+            logger.error(f'Unable to parse Singer Message:\n{line}')
             raise
 
-        if isinstance(msg, singer.RecordMessage):
+        # There can be several kind of messages. When inserting data, the
+        # schema message comes first
+        if isinstance(msg, singer.SchemaMessage):
+            # Schema message, save schema
+            table_name: str = msg.stream + table_suffix
+
+            # Skip schema if already created
+            if table_name in rows:
+                continue
+
+            # Save schema and setup a temp file for data storage
+            schemas[table_name] = msg.schema
+            key_properties[table_name] = msg.key_properties
+            rows[table_name] = TemporaryFile(mode='w+b')
+            errors[table_name] = None
+
+        elif isinstance(msg, singer.RecordMessage):
+            # Record message
             table_name = msg.stream + table_suffix
 
             if table_name not in schemas:
                 raise Exception(
-                    "A record for stream {} was encountered before a corresponding schema".format(
-                        table_name
+                    f'A record for stream {table_name} was encountered before '
+                    'a corresponding schema'
                     )
-                )
 
-            schema = schemas[table_name]
+            # Retrieve schema
+            schema: dict = schemas[table_name]
 
+            # Validate the record
             if validate_records:
+                # Raises ValidationError if the record has invalid schema
                 validate(msg.record, schema)
 
-            new_rec = filter(schema, msg.record)
+            record_input: dict = filter(schema, msg.record)
 
-            # NEWLINE_DELIMITED_JSON expects literal JSON formatted data, with a newline character splitting each row.
-            data = bytes(json.dumps(new_rec, cls=DecimalEncoder) + "\n", "UTF-8")
+            # Somewhere in the process, the input record can have decimal
+            # values e.g. "value": Decimal('10.25'). These are not JSON
+            # erializable. Therefore, we dump the JSON here, which converts
+            # them to string. Thereafter, we load the dumped JSON so we get a
+            # dictionary again, which we can insert to BigQuery
+            record: bytes = bytes(
+                json.dumps(record_input, cls=DecimalEncoder) + "\n", 'UTF-8'
+            )
 
-            rows[table_name].write(data)
+            # Save data to load later
+            rows[table_name].write(record)
 
             state = None
 
         elif isinstance(msg, singer.StateMessage):
-            logger.debug("Setting state to {}".format(msg.value))
+            # State messages
+            logger.debug(f'Setting state to {msg.value}')
             state = msg.value
-
-        elif isinstance(msg, singer.SchemaMessage):
-            table_name = msg.stream + table_suffix
-
-            if table_name in rows:
-                continue
-
-            schemas[table_name] = msg.schema
-            key_properties[table_name] = msg.key_properties
-            rows[table_name] = TemporaryFile(mode="w+b")
-            errors[table_name] = None
 
         elif isinstance(msg, singer.ActivateVersionMessage):
             # This is experimental and won't be used yet
             pass
 
         else:
-            raise Exception("Unrecognized message {}".format(msg))
+            raise Exception(f'Unrecognized Singer Message:\n {msg}')
 
+    # After all recordsa are received, setup a load job per stream
     for table in rows.keys():
-        key_props = key_properties[table]
-        SCHEMA = build_schema(schemas[table], key_properties=key_props)
-        load_config = LoadJobConfig()
-        load_config.schema = SCHEMA
+        # Prepare load job
+        key_props: str = key_properties[table]
+        load_config: LoadJobConfig = LoadJobConfig()
+        load_config.schema = build_schema(
+            schemas[table],
+            key_properties=key_props,
+        )
         load_config.source_format = SourceFormat.NEWLINE_DELIMITED_JSON
 
-        if truncate or (table in forced_fulltables):
-            logger.info(f"Load {table} by FULL_TABLE")
+        # Overwrite the table if truncate is enabled
+        if truncate or table in forced_fulltables:
+            logger.info(f'Load {table} by FULL_TABLE')
             load_config.write_disposition = WriteDisposition.WRITE_TRUNCATE
 
-        logger.info("loading {} to Bigquery.\n".format(table))
+        logger.info(f'loading {table} to Bigquery.')
 
         try:
-            load_job = client.load_table_from_file(
-                rows[table], dataset.table(table), job_config=load_config, rewind=True
+            # Setup load job
+            load_job: LoadJob = client.load_table_from_file(
+                rows[table],
+                dataset.table(table),
+                job_config=load_config,
+                rewind=True,
             )
-            logger.info("loading job {}".format(load_job.job_id))
-            logger.info(load_job.result())
+            logger.info(f'loading job {load_job.job_id}')
+            load_job.result()
+            logger.info(
+                f'Loaded {load_job.output_rows} rows in {load_job.destination}'
+            )
+
         except google_exceptions.BadRequest as err:
-            logger.error(
-                "failed to load table {} from file: {}".format(table, str(err))
-            )
+            # Parse errors
+            logger.error(f'failed to load table {table} from file: {err}')
+
             if load_job.errors:
-                messages = [
+                messages: list = [
                     f"reason: {err['reason']}, message: {err['message']}"
                     for err in load_job.errors
                 ]
-                logger.error("errors:\n{}".format("\n".join(messages)))
+                messages_str: str = "\n".join(messages)
+                logger.error(f'errors:\n{messages_str}')
             raise
 
     yield state
