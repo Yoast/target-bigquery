@@ -17,7 +17,6 @@ from target_bigquery.schema import build_schema, filter
 from target_bigquery.encoders import DecimalEncoder
 
 
-logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
 logger: logging.RootLogger = singer.get_logger()
 
 
@@ -73,6 +72,7 @@ def persist_lines_stream(
             except exceptions.Conflict:
                 # Ignore errors about the table already exists
                 pass
+
         elif isinstance(msg, singer.RecordMessage):
             # Record message
             table_name: str = msg.stream + table_suffix
@@ -125,6 +125,7 @@ def persist_lines_stream(
             state = None
 
         elif isinstance(msg, singer.StateMessage):
+            # State messages
             logger.debug(f'Setting state to {msg.value}')
             state = msg.value
 
