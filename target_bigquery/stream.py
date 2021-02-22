@@ -1,33 +1,65 @@
-"""Streaming data into BigQuery"""
+"""Streaming data into BigQuery."""
 # -*- coding: utf-8 -*-
-import logging
 import json
-from typing import Optional, Iterator, TextIO, Union
-from singer import SchemaMessage, StateMessage, RecordMessage
-from google.cloud.bigquery.dataset import Dataset
-from google.cloud.bigquery.client import Client
-from google.cloud.bigquery.table import TableReference
+import logging
+from typing import Iterator, Optional, TextIO, Union
+
 from google.cloud import bigquery
-from google.api_core import exceptions
-
+from google.cloud.bigquery.client import Client
+from google.cloud.bigquery.dataset import Dataset
+from google.cloud.bigquery.table import TableReference
 from jsonschema import validate
-import singer
+from singer import (  # noqa: I001
+    get_logger,  # noqa: I001
+    parse_message,  # noqa: I001
+    RecordMessage,  # noqa: I001
+    SchemaMessage,  # noqa: I001
+    StateMessage,  # noqa: I001
+)  # noqa: I001
 
-from target_bigquery.schema import build_schema, filter
 from target_bigquery.encoders import DecimalEncoder
+from target_bigquery.exceptions import (  # noqa: I001
+    InvalidSingerMessage,  # noqa: I001
+    SchemaNotFoundException,  # noqa: I001
+)  # noqa: I001
+from target_bigquery.schema import build_schema, filter_schema
+from target_bigquery.tools import table_exists
+
+LOGGER: logging.RootLogger = get_logger()
 
 
-logger: logging.RootLogger = singer.get_logger()
-
-
-def persist_lines_stream(
+def persist_lines_stream(  # noqa: 211
     client: Client,
+    project_id,
     dataset: Dataset,
     lines: TextIO,
+    truncate: bool,
+    forced_fulltables: list,
     validate_records: bool = True,
     table_suffix: Optional[str] = None,
     table_prefix: Optional[str] = None,
 ) -> Iterator[Optional[str]]:
+    """Stream data into BigQuery.
+
+    Arguments:
+        client {Client} -- BigQuery client
+        dataset {Dataset} -- BigQuery dataset
+        lines {TextIO} -- Tap stream
+
+    Keyword Arguments:
+        truncate {bool} -- Whether to truncunate the table
+        forced_fulltables {list} -- List of tables to truncunate
+        validate_records {bool} -- Whether to alidate records (default: {True})
+        table_suffix {Optional[str]} -- Suffix for tables (default: {None})
+        table_prefix {Optional[str]} -- Prefix for tables (default: {None})
+
+    Raises:
+        SchemaNotFoundException: If the schema message was not received yet
+        InvalidSingerMessage: Invalid Sinnger message
+
+    Yields:
+        Iterator[Optional[str]] -- State
+    """
     # Create variable in which we save data in the upcomming loop
     state: Optional[str] = None
     schemas: dict = {}
@@ -35,7 +67,7 @@ def persist_lines_stream(
     tables: dict = {}
     rows: dict = {}
     errors: dict = {}
-    table_suffix = table_suffix or ""
+    table_suffix = table_suffix or ''
     table_prefix = table_prefix or ''
 
     # For every Singer input message
@@ -43,15 +75,15 @@ def persist_lines_stream(
         # Parse the message
         try:
             msg: Union[SchemaMessage, StateMessage, RecordMessage] = (
-                singer.parse_message(line)
+                parse_message(line)
             )
         except json.decoder.JSONDecodeError:
-            logger.error(f'Unable to parse Singer Message:\n{line}')
+            LOGGER.error(f'Unable to parse Singer Message:\n{line}')
             raise
 
         # There can be several kind of messages. When inserting data, the
         # schema message comes first
-        if isinstance(msg, singer.SchemaMessage):
+        if isinstance(msg, SchemaMessage):
             # Schema message, create the table
             table_name: str = table_prefix + msg.stream + table_suffix
 
@@ -62,28 +94,26 @@ def persist_lines_stream(
 
             tables[table_name] = bigquery.Table(
                 dataset.table(table_name),
-                schema=build_schema(schemas[table_name])
+                schema=build_schema(schemas[table_name]),
             )
 
             rows[table_name] = 0
             errors[table_name] = None
 
-            # Create the table
-            try:
-                tables[table_name] = client.create_table(tables[table_name])
-            except exceptions.Conflict:
-                # Ignore errors about the table already exists
-                pass
+            dataset_id: str = dataset.dataset_id
+            if not table_exists(client, project_id, dataset_id, table_name):
+                # Create the table
+                client.create_table(tables[table_name])
 
-        elif isinstance(msg, singer.RecordMessage):
+        elif isinstance(msg, RecordMessage):
             # Record message
-            table_name: str = table_prefix + msg.stream + table_suffix
+            table_name = table_prefix + msg.stream + table_suffix
 
             if table_name not in schemas:
-                raise Exception(
+                raise SchemaNotFoundException(
                     f'A record for stream {table_name} was encountered before '
-                    'a corresponding schema'
-                    )
+                    'a corresponding schema',
+                )
 
             # Retrieve schema
             schema: dict = schemas[table_name]
@@ -97,7 +127,10 @@ def persist_lines_stream(
                 validate(msg.record, schema)
 
             # Filter the record
-            record_input: dict = filter(schema, msg.record)
+            record_input: Optional[Union[dict, str, list]] = filter_schema(
+                schema,
+                msg.record,
+            )
 
             # Somewhere in the process, the input record can have decimal
             # values e.g. "value": Decimal('10.25'). These are not JSON
@@ -114,9 +147,9 @@ def persist_lines_stream(
                 # Insert record
                 err = client.insert_rows(table_ref, [record])
             except Exception as exc:
-                logger.error(
-                    f'Failed to insert rows for {table_name}: {str(exc)}\n'
-                    f'{record}\n{err}'
+                LOGGER.error(
+                    f'Failed to insert rows for {table_name}: {exc}\n'
+                    f'{record}\n{err}',
                 )
                 raise
 
@@ -126,25 +159,24 @@ def persist_lines_stream(
 
             state = None
 
-        elif isinstance(msg, singer.StateMessage):
+        elif isinstance(msg, StateMessage):
             # State messages
-            logger.debug(f'Setting state to {msg.value}')
+            LOGGER.debug(f'Setting state to {msg.value}')
             state = msg.value
 
-        elif isinstance(msg, singer.ActivateVersionMessage):
-            # This is experimental and won't be used yet
-            pass
-
         else:
-            raise Exception(f'Unrecognized Singer Message:\n {msg}')
+            raise InvalidSingerMessage(f'Unrecognized Singer Message:\n {msg}')
 
     for table in errors.keys():
-        if not errors[table]:
+        if errors[table]:
+            logging.error(f'Errors: {errors[table]}')
+        else:
             logging.info(
-                "Loaded {} row(s) from {} into {}:{}".format(
-                    rows[table], dataset.dataset_id, table, tables[table].path
-                )
+                'Loaded {rows} row(s) from {source} into {tab}:{path}'.format(
+                    rows=rows[table],
+                    source=dataset.dataset_id,
+                    tab=table,
+                    path=tables[table].path,
+                ),
             )
             yield state
-        else:
-            logging.error("Errors: %s", errors[table])

@@ -1,4 +1,4 @@
-'''Schema.'''
+"""Schema."""
 # -*- coding: utf-8 -*-
 
 import re
@@ -6,11 +6,11 @@ from typing import Optional, Union
 
 from google.cloud.bigquery import SchemaField
 
-JSON_SCHEMA_LITERALS: set = {'boolean', 'number', 'integer', 'string'}
+JSON_SCHEMA_LITERALS: tuple = ('boolean', 'number', 'integer', 'string')
 
 
 def get_type(prop: dict) -> tuple:
-    """Retrieve the type of the property
+    """Retrieve the type of the property.
 
     Arguments:
         prop {dict} -- Input property
@@ -26,11 +26,11 @@ def get_type(prop: dict) -> tuple:
 
     if 'anyOf' in prop:
         return 'anyOf', nullable
-    elif 'type' in prop:
+    elif prop.get('type'):
         prop_type = prop['type']
     else:
         raise ValueError(
-            f"'type' or 'anyOf' are required fields in property: {prop}"
+            f"'type' or 'anyOf' are required fields in property: {prop}",
         )
 
     # The property has one type
@@ -50,8 +50,11 @@ def get_type(prop: dict) -> tuple:
     return field_type, nullable
 
 
-def filter(schema: dict, record: Optional[dict]) -> Optional[Union[str, list]]:
-    """Filter the schema with the record
+def filter_schema(  # noqa: WPS210, WPS212, WPS231
+    schema: dict,
+    record: Optional[dict],
+) -> Optional[Union[dict, str, list]]:
+    """Filter the schema with the record.
 
     Arguments:
         schema {dict} -- Input schema
@@ -61,7 +64,7 @@ def filter(schema: dict, record: Optional[dict]) -> Optional[Union[str, list]]:
         ValueError: If the field type is unknnown
 
     Returns:
-        OptionalUnion[str, list] -- The filterd record
+        OptionalUnion[dict, str, list] -- The filterd record
     """
     if not record:
         return record
@@ -84,7 +87,7 @@ def filter(schema: dict, record: Optional[dict]) -> Optional[Union[str, list]]:
             # anyOf can be an array of properties, the choice here is to ignore
             # the case where anyOf is two types (not including 'null')
             # and simply choose the first one. This might bite us.
-            return filter(prop, record)
+            return filter_schema(prop, record)
 
     elif field_type == 'object':
         # Parse an object
@@ -96,7 +99,7 @@ def filter(schema: dict, record: Optional[dict]) -> Optional[Union[str, list]]:
             if key not in record:
                 continue
 
-            obj_results[key] = filter(prop_schema, record[key])
+            obj_results[key] = filter_schema(prop_schema, record[key])
 
         return obj_results
 
@@ -114,20 +117,20 @@ def filter(schema: dict, record: Optional[dict]) -> Optional[Union[str, list]]:
         # Build the array list
         arr_result: list = []
 
-        for obj in record:
-            arr_result.append(filter(props, obj))
+        for schema_object in record:
+            arr_result.append(filter_schema(props, schema_object))
 
         return arr_result
     else:
         raise ValueError(f'type {field_type} is unknown')
 
 
-def define_schema(
+def define_schema(  # noqa: 231
     field: dict,
     name: str,
     required_fields: Optional[set] = None,
 ) -> SchemaField:
-    """Createa schema field
+    """Createa schema field.
 
     Arguments:
         field {dict} -- Input field
@@ -151,7 +154,7 @@ def define_schema(
 
     if field_type == 'anyOf':
         # Multiple possible types
-        props: list = field['anyOf']
+        props: dict = field['anyOf']
 
         # Select first non-null property
         for prop in props:
@@ -182,7 +185,7 @@ def define_schema(
     elif field_type == 'array':
         # objects in arrays cannot be nullable
         # - but nested fields in RECORDS can be nullable
-        props = field.get('items')
+        props = field.get('items', {})
         props_type, _ = get_type(props)
 
         if props_type == 'object':
@@ -199,7 +202,7 @@ def define_schema(
             schema_mode,
             schema_description,
             schema_fields,
-            )
+        )
 
     # Check if the field type is known
     if field_type not in JSON_SCHEMA_LITERALS:
@@ -243,7 +246,7 @@ def define_schema(
 
 
 def bigquery_transformed_key(key: str) -> str:
-    """Transform BigQuery key to legal format
+    """Transform BigQuery key to legal format.
 
     Arguments:
         key {str} -- Input key
@@ -251,7 +254,7 @@ def bigquery_transformed_key(key: str) -> str:
     Returns:
         str -- Transformed key
     """
-    for pattern, repl in [(r'-', '_'), (r'^\d', '_'), (r'\.', '_')]:
+    for pattern, repl in (('-', '_'), (r'^\d', '_'), (r'\.', '_')):
         key = re.sub(pattern, repl, key)
 
     return key
@@ -261,7 +264,7 @@ def build_schema(
     schema: dict,
     key_properties: Optional[Union[str, list]] = None,
 ) -> list:
-    """Build the schema
+    """Build the schema.
 
     Arguments:
         schema {dict} -- Input schema
@@ -276,7 +279,7 @@ def build_schema(
     built_schema: list = []
 
     required_fields = set(key_properties) if key_properties else set()
-    if 'required' in schema:
+    if schema.get('required'):
         required_fields.update(schema['required'])
 
     for key, props in schema['properties'].items():
@@ -290,7 +293,7 @@ def build_schema(
                 props,
                 bigquery_transformed_key(key),
                 required_fields=required_fields,
-            )
+            ),
         )
 
     return built_schema

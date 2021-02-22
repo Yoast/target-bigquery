@@ -1,35 +1,25 @@
 """BigQuery target."""
 # -*- coding: utf-8 -*-
 
-import argparse
 import io
+import logging
 import sys
+from argparse import ArgumentParser, Namespace
+from typing import Iterator, Optional, TextIO, Tuple
 
 import pkg_resources
-
-import logging
-
-from typing import Iterator, Optional, TextIO
-from argparse import ArgumentParser, Namespace
-
-from typing import Tuple
-import singer
-
-
-from oauth2client import tools
-
+from google.cloud import bigquery
 from google.cloud.bigquery.client import Client
 from google.cloud.bigquery.dataset import Dataset
-from google.cloud import bigquery
+from oauth2client import tools
+from singer import get_logger, utils
 
 from target_bigquery.job import persist_lines_job
 from target_bigquery.stream import persist_lines_stream
-from target_bigquery.utils import emit_state
-
-from singer import utils
+from target_bigquery.tools import dataset_exists, emit_state
 
 VERSION: str = pkg_resources.get_distribution('target-bigquery').version
-LOGGER: logging.RootLogger = singer.get_logger()
+LOGGER: logging.RootLogger = get_logger()
 REQUIRED_CONFIG_KEYS: tuple = ('project_id', 'dataset_id')
 
 # Disable google cache logger message
@@ -37,14 +27,13 @@ logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
 
 
 @utils.handle_top_exception(LOGGER)
-def main() -> None:
+def main() -> None:  # noqa: WPS210
     """Run target."""
     # Required command line arguments
-    parser: ArgumentParser = argparse.ArgumentParser(parents=[tools.argparser])
+    parser: ArgumentParser = ArgumentParser(parents=[tools.argparser])
     parser.add_argument('-c', '--config', help='Config file', required=True)
 
     # Parse command line arguments
-    # args: Namespace = parser.parse_args()
     args: Namespace = utils.parse_args(REQUIRED_CONFIG_KEYS)
 
     LOGGER.info(f'>>> Running target-bigquery v{VERSION}')
@@ -62,10 +51,11 @@ def main() -> None:
     stream_data: bool = config.get('stream_data', True)
 
     LOGGER.info(
-        f'BigQuery target configured to move data to {project_id}.'
-        f'{dataset_id}. table_suffix={table_suffix}, stream_data='
-        f'{stream_data}, location={location}, validate_records='
-        f'{validate_records}, forced_fulltables={forced_fulltables}'
+        f'BigQuery target configured to move data to '  # noqa: WPS221
+        f'{project_id}.{dataset_id}. table_suffix={table_suffix}, '
+        f'table_prefix={table_prefix}, stream_data={stream_data}, '
+        f'location={location}, validate_records={validate_records}, '
+        f'forced_fulltables={forced_fulltables}',
     )
 
     # Create dataset if not exists
@@ -82,8 +72,11 @@ def main() -> None:
     if stream_data:
         state_iterator: Iterator = persist_lines_stream(
             client,
+            project_id,
             dataset,
             input_target,
+            truncate=truncate,
+            forced_fulltables=forced_fulltables,
             validate_records=validate_records,
             table_suffix=table_suffix,
             table_prefix=table_prefix,
@@ -123,19 +116,20 @@ def ensure_dataset(
     client: Client = bigquery.Client(project=project_id, location=location)
 
     dataset_ref: Dataset = client.dataset(dataset_id)
-    try:
+
+    if not dataset_exists(client, dataset_id):
+        # Create dataset
         LOGGER.info(
-            f'Attempting to create dataset: {project_id}.{dataset_id} in '
-            f'location: {location}'
+            f'Creating dataset: {project_id}.{dataset_id} in '
+            f'location: {location}',
         )
+
         client.create_dataset(dataset_ref, exists_ok=True)
+
         LOGGER.info(
             f'Succesfully created dataset: {project_id}.{dataset_id} in '
-            f'location: {location}'
+            f'location: {location}',
         )
-    except Exception:
-        # attempt to run even if creation fails due to permissions etc.
-        pass
 
     return client, Dataset(dataset_ref)
 
