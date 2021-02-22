@@ -1,10 +1,10 @@
 """Setup."""
 # -*- coding: utf-8 -*-
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
     name='target-bigquery',
-    version='1.6.0',
+    version='1.6.1',
     description='Singer.io target for writing data to Google BigQuery',
     author='Yoast',
     url='https://github.com/Yoast/target-bigquery',
@@ -18,9 +18,9 @@ setup(
         'oauth2client~=4.1.3',
         'singer-python~=5.10.0',
     ],
-    entry_points='''
+    entry_points="""
         [console_scripts]
         target-bigquery=target_bigquery:main
-      ''',
+      """,
     packages=find_packages(),
 )
