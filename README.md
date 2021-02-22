@@ -1,6 +1,6 @@
 # target-bigquery
 
-A [Singer](https://singer.io) target that writes data to Google BigQuery. This fork has been fully rewritten by Yoast and contains fixes for streaming data.
+A [Singer](https://singer.io) target that writes data to Google BigQuery. This fork has been fully rewritten by Yoast and contains fixes for streaming data. Schema: Numbers are default Numeric in BigQuery
 
 ## How to use it
 
@@ -21,7 +21,7 @@ A [Singer](https://singer.io) target that writes data to Google BigQuery. This f
 
 ### Step 2: Configure
 
-Create a file called `bigquery_config.json` in your working directory, following [config.json.example](config.json.example). The required parameters are the project name `project_id`, the dataset name `dataset_id`, and table name `table_id`. 
+Create a file called `bigquery_config.json` in your working directory, following [config.json.example](config.json.example). The required parameters are the project name `project_id` and the dataset name `dataset_id`. 
 
 ### Step 3: Install and Run
 
@@ -54,5 +54,16 @@ It should be possible to use the oAuth flow to authenticate to GCP as well:
 * You can close the tab after the signup flow is complete.
 
 The data will be written to the table specified in your `config.json`.
+
+### Schema
+By default, this target will convert numbers to NUMERIC types in BigQuery. If you want to use a different type, use the format below:
+
+To convert numbers to float:
+```
+"propety": {
+  "type": "number",
+  "format": "float" # float, numeric, bignumeric
+}
+```
 
 Copyright &copy; 2021 Yoast
