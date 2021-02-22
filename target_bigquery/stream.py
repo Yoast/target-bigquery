@@ -51,24 +51,24 @@ def persist_lines_stream(
         # schema message comes first
         if isinstance(msg, singer.SchemaMessage):
             # Schema message, create the table
-            table: str = msg.stream
+            table_name: str = msg.stream + table_suffix
 
             # Save the schema, key_properties and message to use in the
             # record messages that are following
-            schemas[table] = msg.schema
-            key_properties[table] = msg.key_properties
+            schemas[table_name] = msg.schema
+            key_properties[table_name] = msg.key_properties
 
-            tables[table] = bigquery.Table(
-                dataset.table(table),
-                schema=build_schema(schemas[table])
+            tables[table_name] = bigquery.Table(
+                dataset.table(table_name),
+                schema=build_schema(schemas[table_name])
             )
 
-            rows[table] = 0
-            errors[table] = None
+            rows[table_name] = 0
+            errors[table_name] = None
 
             # Create the table
             try:
-                tables[table] = client.create_table(tables[table])
+                tables[table_name] = client.create_table(tables[table_name])
             except exceptions.Conflict:
                 # Ignore errors about the table already exists
                 pass
