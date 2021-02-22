@@ -55,6 +55,7 @@ def main() -> None:
     truncate: bool = config.get('replication_method') == 'FULL_TABLE'
     forced_fulltables: list = config.get('forced_fulltables', [])
     table_suffix: Optional[str] = config.get('table_suffix')
+    table_prefix: Optional[str] = config.get('table_prefix')
     location: str = config.get('location', 'EU')
     validate_records: bool = config.get('validate_records', True)
     project_id, dataset_id = config['project_id'], config['dataset_id']
@@ -85,6 +86,7 @@ def main() -> None:
             input_target,
             validate_records=validate_records,
             table_suffix=table_suffix,
+            table_prefix=table_prefix,
         )
 
     else:
@@ -96,6 +98,7 @@ def main() -> None:
             forced_fulltables=forced_fulltables,
             validate_records=validate_records,
             table_suffix=table_suffix,
+            table_prefix=table_prefix,
         )
 
     for state in state_iterator:

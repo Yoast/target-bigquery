@@ -30,6 +30,7 @@ def persist_lines_job(
     forced_fulltables: list = [],
     validate_records: bool = True,
     table_suffix: Optional[str] = None,
+    table_prefix: Optional[str] = None,
 ) -> Iterator[Optional[str]]:
     # Create variable in which we save data in the upcomming loop
     state: Optional[str] = None
@@ -38,6 +39,7 @@ def persist_lines_job(
     rows: dict = {}
     errors: dict = {}
     table_suffix = table_suffix or ""
+    table_prefix = table_prefix or ''
 
     # For every Singer input message
     for line in lines:
@@ -54,7 +56,7 @@ def persist_lines_job(
         # schema message comes first
         if isinstance(msg, singer.SchemaMessage):
             # Schema message, save schema
-            table_name: str = msg.stream + table_suffix
+            table_name: str = table_prefix + msg.stream + table_suffix
 
             # Skip schema if already created
             if table_name in rows:
@@ -68,7 +70,7 @@ def persist_lines_job(
 
         elif isinstance(msg, singer.RecordMessage):
             # Record message
-            table_name = msg.stream + table_suffix
+            table_name = table_prefix + msg.stream + table_suffix
 
             if table_name not in schemas:
                 raise Exception(

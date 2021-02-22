@@ -26,6 +26,7 @@ def persist_lines_stream(
     lines: TextIO,
     validate_records: bool = True,
     table_suffix: Optional[str] = None,
+    table_prefix: Optional[str] = None,
 ) -> Iterator[Optional[str]]:
     # Create variable in which we save data in the upcomming loop
     state: Optional[str] = None
@@ -35,6 +36,7 @@ def persist_lines_stream(
     rows: dict = {}
     errors: dict = {}
     table_suffix = table_suffix or ""
+    table_prefix = table_prefix or ''
 
     # For every Singer input message
     for line in lines:
@@ -51,7 +53,7 @@ def persist_lines_stream(
         # schema message comes first
         if isinstance(msg, singer.SchemaMessage):
             # Schema message, create the table
-            table_name: str = msg.stream + table_suffix
+            table_name: str = table_prefix + msg.stream + table_suffix
 
             # Save the schema, key_properties and message to use in the
             # record messages that are following
@@ -75,7 +77,7 @@ def persist_lines_stream(
 
         elif isinstance(msg, singer.RecordMessage):
             # Record message
-            table_name: str = msg.stream + table_suffix
+            table_name: str = table_prefix + msg.stream + table_suffix
 
             if table_name not in schemas:
                 raise Exception(
