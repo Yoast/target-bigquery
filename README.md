@@ -62,7 +62,7 @@ To convert numbers to float:
 ```
 "propety": {
   "type": "number",
-  "format": "float" # float, numeric, bignumeric
+  "format": "float" # float, integer, numeric, bignumeric
 }
 ```
 
