@@ -230,6 +230,8 @@ def define_schema(  # noqa: 231
             schema_type = 'NUMERIC'
         elif field_format == 'bignumeric':
             schema_type = 'BIGNUMERIC'
+        elif field_format == 'integer':
+            schema_type = 'INT64'
         else:
             schema_type = 'NUMERIC'
     else:
