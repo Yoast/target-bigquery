@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import json
 import logging
+import time
 from typing import Iterator, Optional, TextIO, Union
 
 from google.cloud import bigquery
@@ -26,6 +27,7 @@ from target_bigquery.schema import build_schema, filter_schema
 from target_bigquery.tools import table_exists
 
 LOGGER: logging.RootLogger = get_logger()
+FIVE_MINUTES: int = 300
 
 
 def persist_lines_stream(  # noqa: 211
@@ -104,6 +106,25 @@ def persist_lines_stream(  # noqa: 211
             if not table_exists(client, project_id, dataset_id, table_name):
                 # Create the table
                 client.create_table(tables[table_name])
+            elif truncate or table_name in forced_fulltables:
+                LOGGER.info(f'Load {table_name} by FULL_TABLE')
+
+                # When truncating is enabled and the table exists, the table
+                # has to be recreated. Because of this, we have to wait
+                # otherwise data can be lost, see:
+                # https://stackoverflow.com/questions/36846571/
+                # bigquery-table-truncation-before-streaming-not-working
+                LOGGER.info(f'Deleting table {table_name} because it exists')
+                client.delete_table(tables[table_name])
+                LOGGER.info(f'Recreating table {table_name}')
+                client.create_table(tables[table_name])
+                LOGGER.info(
+                    'Sleeping for 5 minutes before streaming data, '
+                    f'to avoid streaming data loss in {table_name}',
+                )
+                time.sleep(FIVE_MINUTES)
+
+                # Delete table
 
         elif isinstance(msg, RecordMessage):
             # Record message

@@ -55,7 +55,8 @@ def main() -> None:  # noqa: WPS210
         f'{project_id}.{dataset_id}. table_suffix={table_suffix}, '
         f'table_prefix={table_prefix}, stream_data={stream_data}, '
         f'location={location}, validate_records={validate_records}, '
-        f'forced_fulltables={forced_fulltables}',
+        f'forced_fulltables={forced_fulltables}, '
+        f'replication_method={truncate}',
     )
 
     # Create dataset if not exists
@@ -63,11 +64,6 @@ def main() -> None:  # noqa: WPS210
 
     # Input data from the tap
     input_target: TextIO = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8')
-
-    if stream_data and truncate:
-        raise NotImplementedError(
-            'Streaming data and truncating table is currently not implemented.'
-        )
 
     if stream_data:
         state_iterator: Iterator = persist_lines_stream(

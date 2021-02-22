@@ -1,6 +1,8 @@
 {
     "project_id": "bigquery-public-data",
     "dataset_id": "samples",
+    "replication_method": "INCREMENTAL",
+    "forced_fulltables": [],
     "table_prefix": "prefix_",
     "table_suffix": "_suffix",
     "validate_records": true,

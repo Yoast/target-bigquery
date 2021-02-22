@@ -4,7 +4,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='target-bigquery',
-    version='1.6.0',
+    version='1.6.1',
     description='Singer.io target for writing data to Google BigQuery',
     author='Yoast',
     url='https://github.com/Yoast/target-bigquery',
